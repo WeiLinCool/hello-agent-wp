@@ -1,0 +1,175 @@
+python llm_client.py
+--- 调用LLM ---
+🧠 正在调用 qwen3.7-plus 模型...
+✅ 大语言模型响应成功:
+这里为您提供两种快速排序（Quick Sort）的 Python 实现方式。
+
+第一种是**简洁易懂版**（利用 Python 特性，代码非常直观，适合理解算法思想）；第二种是**标准原地排序版**（空间复杂度更低，适合面试和实际工程）。
+
+### 1. 简洁易懂版（非原地排序）
+这种写法利用了 Python 的列表推导式，代码非常优雅，但会创建新的列表，因此空间复杂度较高。
+
+```python
+def quick_sort_simple(arr):
+    # 递归的基线条件：如果数组为空或只有一个元素，则已经有序
+    if len(arr) <= 1:
+        return arr
+
+    # 选择基准值（这里选择中间的元素）
+    pivot = arr[len(arr) // 2]
+
+    # 将数组分成三部分：小于基准、等于基准、大于基准
+    left = [x for x in arr if x < pivot]
+    middle = [x for x in arr if x == pivot]
+    right = [x for x in arr if x > pivot]
+
+    # 递归排序左右两部分，并拼接结果
+    return quick_sort_simple(left) + middle + quick_sort_simple(right)
+
+# 测试
+arr1 = [3, 6, 8, 10, 1, 2, 1]
+print("简洁版排序结果:", quick_sort_simple(arr1))
+```
+
+---
+
+### 2. 标准原地排序版（推荐）
+这种写法通过双指针在原数组上进行元素交换，不需要额外的存储空间（除了递归调用栈），是更标准的算法实现。
+
+```python
+def quick_sort(arr):
+    # 内部辅助函数，用于递归
+    def _quick_sort(items, low, high):
+        if low < high:
+            # 获取分区索引
+            pi = partition(items, low, high)
+
+            # 递归排序基准值左侧和右侧的子数组
+            _quick_sort(items, low, pi - 1)
+            _quick_sort(items, pi + 1, high)
+
+    # 分区函数
+    def partition(items, low, high):
+        # 选择最右边的元素作为基准值
+        pivot = items[high]
+
+        # i 指向小于基准值的最后一个元素的索引
+        i = low - 1
+
+        for j in range(low, high):
+            # 如果当前元素小于或等于基准值
+            if items[j] <= pivot:
+                i = i + 1
+                # 交换 items[i] 和 items[j]
+                items[i], items[j] = items[j], items[i]
+
+        # 把基准值交换到中间的正确位置
+        items[i + 1], items[high] = items[high], items[i + 1]
+        return i + 1
+
+    # 触发排序
+    _quick_sort(arr, 0, len(arr) - 1)
+    return arr
+
+# 测试
+arr2 = [9, -3, 5, 2, 6, 8, -6, 1, 3]
+print("原地版排序结果:", quick_sort(arr2))
+```
+
+---
+
+### 算法复杂度分析
+* **时间复杂度**：
+  * **平均情况**：$O(N \log N)$，每次分区都能将数组大致平分。
+  * **最坏情况**：$O(N^2)$，当数组已经是有序或逆序时，且每次选到最大/最小值作为基准。（可以通过**随机选择基准值**或**三数取中法**来优化避免最坏情况）。
+* **空间复杂度**：
+  * **简洁版**：$O(N)$，因为每次递归都创建了新的列表。
+  * **原地版**：$O(\log N)$，主要是递归调用栈所占用的空间。
+* **稳定性**：快速排序是**不稳定**的排序算法（相同元素的相对位置可能会在交换中发生改变）。
+
+
+--- 完整模型响应 ---
+这里为您提供两种快速排序（Quick Sort）的 Python 实现方式。
+
+第一种是**简洁易懂版**（利用 Python 特性，代码非常直观，适合理解算法思想）；第二种是**标准原地排序版**（空间复杂度更低，适合面试和实际工程）。
+
+### 1. 简洁易懂版（非原地排序）
+这种写法利用了 Python 的列表推导式，代码非常优雅，但会创建新的列表，因此空间复杂度较高。
+
+```python
+def quick_sort_simple(arr):
+    # 递归的基线条件：如果数组为空或只有一个元素，则已经有序
+    if len(arr) <= 1:
+        return arr
+
+    # 选择基准值（这里选择中间的元素）
+    pivot = arr[len(arr) // 2]
+
+    # 将数组分成三部分：小于基准、等于基准、大于基准
+    left = [x for x in arr if x < pivot]
+    middle = [x for x in arr if x == pivot]
+    right = [x for x in arr if x > pivot]
+
+    # 递归排序左右两部分，并拼接结果
+    return quick_sort_simple(left) + middle + quick_sort_simple(right)
+
+# 测试
+arr1 = [3, 6, 8, 10, 1, 2, 1]
+print("简洁版排序结果:", quick_sort_simple(arr1))
+```
+
+---
+
+### 2. 标准原地排序版（推荐）
+这种写法通过双指针在原数组上进行元素交换，不需要额外的存储空间（除了递归调用栈），是更标准的算法实现。
+
+```python
+def quick_sort(arr):
+    # 内部辅助函数，用于递归
+    def _quick_sort(items, low, high):
+        if low < high:
+            # 获取分区索引
+            pi = partition(items, low, high)
+
+            # 递归排序基准值左侧和右侧的子数组
+            _quick_sort(items, low, pi - 1)
+            _quick_sort(items, pi + 1, high)
+
+    # 分区函数
+    def partition(items, low, high):
+        # 选择最右边的元素作为基准值
+        pivot = items[high]
+
+        # i 指向小于基准值的最后一个元素的索引
+        i = low - 1
+
+        for j in range(low, high):
+            # 如果当前元素小于或等于基准值
+            if items[j] <= pivot:
+                i = i + 1
+                # 交换 items[i] 和 items[j]
+                items[i], items[j] = items[j], items[i]
+
+        # 把基准值交换到中间的正确位置
+        items[i + 1], items[high] = items[high], items[i + 1]
+        return i + 1
+
+    # 触发排序
+    _quick_sort(arr, 0, len(arr) - 1)
+    return arr
+
+# 测试
+arr2 = [9, -3, 5, 2, 6, 8, -6, 1, 3]
+print("原地版排序结果:", quick_sort(arr2))
+```
+
+---
+
+### 算法复杂度分析
+* **时间复杂度**：
+  * **平均情况**：$O(N \log N)$，每次分区都能将数组大致平分。
+  * **最坏情况**：$O(N^2)$，当数组已经是有序或逆序时，且每次选到最大/最小值作为基准。（可以通过**随机选择基准值**或**三数取中法**来优化避免最坏情况）。
+* **空间复杂度**：
+  * **简洁版**：$O(N)$，因为每次递归都创建了新的列表。
+  * **原地版**：$O(\log N)$，主要是递归调用栈所占用的空间。
+* **稳定性**：快速排序是**不稳定**的排序算法（相同元素的相对位置可能会在交换中发生改变）。
