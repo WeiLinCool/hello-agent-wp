@@ -1,6 +1,8 @@
 # Hello Agent 学习笔记
 
-本仓库为 [hello-agents](/Users/wlz/Documents/codeSpace/hello-agents) 的学习笔记与代码参考。
+本仓库是 [Datawhale/hello-agents](https://github.com/datawhalechina/hello-agents) 项目的学习笔记与代码实践。
+
+> 🙏 感谢 [Datawhale](https://github.com/datawhalechina) 开源了优秀的 hello-agents 项目，为本仓库的学习与实践提供了宝贵的基础。
 
 ## 目录结构
 
