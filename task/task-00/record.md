@@ -181,88 +181,244 @@ available_tools = {
 
 #### DeepSeek-harness 的处理方式
 
-DeepSeek-harness 采用 **原生 Function Calling API + 结构化 Agent 循环** 的方式：
+DeepSeek-harness 是一个 AI Agent 运行时框架（TypeScript），采用 **自定义 Schema DSL + 原生 Function Calling + 流式 Agent 循环 + 沙箱执行** 的架构：
 
-| 维度 | 当前示例代码 | DeepSeek-harness |
-|------|------------|-----------------|
-| **工具定义** | 自然语言写在 Prompt 中 | 结构化 JSON Schema，通过 API 的 `tools` 参数传递 |
-| **工具调用解析** | 正则表达式匹配文本 | 使用 OpenAI 兼容的 `function_call` / `tool_calls` 结构化响应 |
-| **Agent 循环** | 简单的 for 循环 + 字符串拼接 | 完整的 Agent 循环框架，支持多轮对话、上下文管理 |
-| **MCP 协议** | 不支持 | 支持 Model Context Protocol，工具可动态发现和注册 |
-| **错误处理** | 返回错误字符串 | 结构化错误处理、重试、超时控制 |
+**1. 工具定义：自定义 Schema DSL（非原始 JSON Schema）**
 
-**核心改进**：DeepSeek-harness 使用 LLM API 原生的 `tools` 参数（而非 Prompt 注入），让模型以结构化 JSON 格式返回工具调用，彻底消除了正则解析的脆弱性：
+工具通过 `defineTool()` 工厂函数定义，使用自定义的类型安全 Schema DSL，编译为 JSON Schema：
 
-```python
-# DeepSeek-harness 风格（使用原生 Function Calling）
-response = client.chat.completions.create(
-    model=model,
-    messages=messages,
-    tools=[{                    # ← 结构化工具定义
-        "type": "function",
-        "function": {
-            "name": "get_weather",
-            "description": "查询指定城市的实时天气",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "city": {"type": "string", "description": "城市名称"}
-                },
-                "required": ["city"]
-            }
-        }
-    }],
-    tool_choice="auto"
-)
-# 响应中包含结构化的 tool_calls，无需正则解析
-tool_call = response.choices[0].message.tool_calls[0]
-tool_name = tool_call.function.name
-tool_args = json.loads(tool_call.function.arguments)  # ← 保证是合法 JSON
+```typescript
+// packages/core/tools/src/schema.ts
+defineTool({
+  name: 'bash',
+  description: 'Run a bash command',
+  parameters: {
+    command: { type: 'string', description: '...', required: true },
+    timeoutMs: { type: 'number', description: '...' },
+  },
+  output: {
+    schema: { type: 'object', properties: { stdout: { type: 'string' } } },
+    render: (args, value) => [{ type: 'text', text: value.stdout }],
+  },
+  execute: async (args, exec) => { /* ... */ },
+})
 ```
+
+特点：
+- **类型推断**：通过 TypeScript 条件类型（`InferValue<S>`, `InferArgs<S>`）在编译期推断参数类型
+- **输出 Schema**：每个工具声明规范化输出 + `render()` 函数将 JSON 投影为模型可见的 `ContentBlock[]`
+- **运行时校验**：参数通过 `validateJsonSchemaValue()` 校验，无效参数抛出 `ToolArgsError`
+
+**2. 工具注册：分层服务 + MCP 桥接**
+
+`ToolRuntime` 是一个 Cordis DI 服务，支持分层注册：
+
+```typescript
+// packages/core/tools/src/index.ts
+class ToolRuntime extends Service {
+  register(definition: ToolDefinition): () => void  // 返回 disposer
+  restrict({ allow?, deny? }): void                  // 按作用域屏蔽工具
+  guard(fn): void                                    // 注册单调拒绝守卫
+}
+```
+
+- **作用域隔离**：工具可全局注册或按 Agent 作用域注册，作用域内工具遮蔽全局
+- **MCP 桥接**：`syncTools()` 从 MCP 服务器获取工具，包装为 `mcp__<serverName>__<rawName>` 格式
+- **展示模式**：`'native'`（发送全部 Schema 给模型）、`'ptc'`（仅核心工具 + Prompt）、`'both'`
+
+**3. 工具调用解析：原生流式 Function Calling**
+
+完全不使用正则，通过适配器层解析各 LLM 提供商的原生 tool_calls：
+
+```typescript
+// packages/llm/llm-deepseek/src/translate.ts
+// DeepSeek 适配器：SSE → StreamChunk
+export async function* translate(payloads: AsyncIterable<string>): AsyncGenerator<StreamChunk>
+// 解析 delta.tool_calls[]，累积 function.name 和 function.arguments
+// 输出: block-start → tool-call-delta → block-end → finish
+
+// packages/llm/llm/src/assembler.ts
+// BlockAssembler：将 StreamChunk 增量组装为 ContentBlock[]
+// 最终产出: { type: 'tool-call', id, name, arguments: string(JSON) }
+```
+
+**4. Agent 循环：Turn → Step → Request → Tool Execution**
+
+```
+kick() → while(await turn()) {}
+  turn():
+    while (true):
+      step = phase.step + 1
+      decision = await preStep(target, {turn, step})
+      stepEnd = await step(decision)
+      if (turnEnds) break
+
+  step(decision):
+    request = buildRequest(config, tools, messages)
+    stream = ctx.llm.stream(request)
+    message = createAssistantMessage({ content: live.blocks() })
+
+    toolCalls = message.content.filter(b => b.type === 'tool-call')
+    if (toolCalls.length === 0) return 'completed'
+
+    { concluded } = await executeToolCalls(ctx, turn, step, toolCalls, ...)
+    return concluded ? 'completed' : null  // null = 继续下一轮 step
+```
+
+**工具调度器**（`tool-calls.ts`）：
+- **并行 vs 独占**：工具通过 `isConcurrencySafe(args)` 分类，并行工具使用有界滚动池（`maxParallelToolCalls`），独占工具形成屏障
+- **模型顺序提交**：结果按模型原始调用顺序提交，即使执行有重叠
+- **中止处理**：为跳过的调用记录合成错误结果
+
+**5. 错误处理与重试**
+
+**LLM 请求重试**（`retry-policy.ts`）：
+- 有界重试（默认 5 次），指数退避 + 抖动（500ms → 10s）
+- 可重试条件：`EMPTY_RESPONSE`, `RATE_LIMIT`, `SERVER`, `TIMEOUT`, `TRANSPORT`
+
+**工具错误类型体系**：
+| 错误类型 | 触发条件 | 处理 |
+|---------|---------|------|
+| `ToolNotFoundError` | 工具名不存在 | 错误信息发给模型自我纠正 |
+| `ToolArgsError` | 参数校验失败 | 违规信息作为错误返回 |
+| `ToolOutputError` | 输出不符合 Schema | 规范化错误 |
+| `ToolExecutionFailure` | 工具执行抛异常 | 错误消息文本化 |
+| 前置拒绝（deny） | 权限守卫拒绝 | `"Error: {reason}"` |
+| 后置阻断（block） | 执行后审查拒绝 | 纠正性反馈作为错误 |
+
+**关键设计**：所有工具错误都转化为模型可见的文本 `"Error: {message}"`，让模型能够自我纠正。
+
+**6. 安全与沙箱**
+
+- 文件操作有沙箱权限控制（read-only / workspace-write / danger-full-access）
+- 工具执行有超时控制（`timeoutMs` 参数）
+- 敏感操作需要用户审批（approval prompt）
+- 单调拒绝守卫（monotonic denial guard）：一旦拒绝，同类操作不可绕过
+
+**关键源码文件**：
+| 关注点 | 文件路径 |
+|--------|---------|
+| 工具定义 DSL | `packages/core/tools/src/schema.ts` |
+| 工具注册 & 管道 | `packages/core/tools/src/index.ts` |
+| Agent 循环 | `packages/core/agent-loop/src/agent.ts` |
+| 工具调用调度 | `packages/core/agent-loop/src/tool-calls.ts` |
+| 流组装器 | `packages/llm/llm/src/assembler.ts` |
+| DeepSeek 适配器 | `packages/llm/llm-deepseek/src/translate.ts` |
+| 重试策略 | `packages/llm/llm/src/retry-policy.ts` |
+| MCP 工具桥接 | `packages/mcp/mcp-client/src/tools.ts` |
 
 #### opencode 的处理方式
 
-opencode（终端 AI 编码助手）同样采用 **原生 Tool Use + 类型安全** 的方案：
+opencode（`anomalyco/opencode`，207k stars，TypeScript，MIT 协议）是一个终端 AI 编码助手，采用 **Vercel AI SDK 原生 Function Calling + Effect 类型系统 + 流式 Agent 循环** 的架构：
 
-| 维度 | 当前示例代码 | opencode |
-|------|------------|----------|
-| **工具定义** | Prompt 文本 | TypeScript 类型定义 + JSON Schema |
-| **调用解析** | 正则匹配 | LLM 原生 tool_use 结构化输出 |
-| **执行安全** | 直接调用 Python 函数 | 权限审批机制，危险操作需用户确认 |
-| **工具生态** | 硬编码 2 个工具 | 插件化工具系统，支持社区扩展 |
-| **上下文管理** | 简单字符串拼接 | 完整的对话历史管理、token 预算控制 |
+**1. 工具定义：Effect Schema 类型安全**
 
-**核心改进**：opencode 将每个工具定义为带有完整输入/输出 Schema 的类型安全模块：
+每个工具使用 Effect 的 `Schema` 进行参数验证，编译为高效的解码器：
 
 ```typescript
-// opencode 风格（TypeScript 类型安全的工具定义）
-const getWeatherTool = {
-  name: "get_weather",
-  description: "查询指定城市的实时天气",
-  parameters: z.object({           // ← Zod Schema 类型安全
-    city: z.string().describe("城市名称"),
-  }),
-  execute: async (args) => {       // ← 类型安全的执行函数
-    const result = await fetchWeather(args.city);
-    return { weather: result.description, temp: result.temp };
-  },
-};
+export interface Def<Parameters, M> {
+  id: string
+  description: string
+  parameters: Parameters           // ← Effect Schema 解码器
+  jsonSchema?: JSONSchema7         // ← 预计算的 JSON Schema
+  execute(args, ctx): Effect.Effect<ExecuteResult<M>>
+  formatValidationError?(error: unknown): string
+}
 ```
 
-### 总结对比
+**2. 工具注册：分层服务架构**
+
+`ToolRegistry` 是一个 Effect `Layer` 服务，按层加载工具：
+1. 内置工具（shell, read, edit, write, glob, grep, webfetch, websearch 等）
+2. 项目自定义工具（`.opencode/tool/*.ts` 文件）
+3. 插件工具
+4. MCP 服务器工具
+5. 按模型能力过滤（如 GPT 模型用 `apply_patch` 替代 `edit`/`write`）
+6. 按权限规则过滤
+
+**3. 工具调用解析：Vercel AI SDK 原生处理**
+
+opencode **完全不使用正则或结构化输出解析**，而是通过 Vercel AI SDK 的 `streamText()` 处理：
+
+```typescript
+streamText({
+  model: wrapLanguageModel({ model: language, middleware: [...] }),
+  tools: prepared.tools,
+  toolChoice: input.toolChoice,
+  messages: prepared.messages,
+})
+```
+
+AI SDK 自动处理各提供商的协议差异（Anthropic 的 XML 格式、OpenAI 的 function calling、Google 的 function calling），输出统一的 `tool-call`/`tool-result` 事件流。
+
+**4. 工具调用修复机制**
+
+当工具调用验证失败时，opencode 有专门的修复机制：
+
+```typescript
+async experimental_repairToolCall(failed) {
+  // 1. 尝试大小写修复
+  const lower = failed.toolCall.toolName.toLowerCase()
+  if (lower !== failed.toolCall.toolName && prepared.tools[lower]) {
+    return { ...failed.toolCall, toolName: lower }
+  }
+  // 2. 路由到 InvalidTool，返回错误让 LLM 自我纠正
+  return {
+    ...failed.toolCall,
+    input: JSON.stringify({ tool: failed.toolCall.toolName, error: failed.error.message }),
+    toolName: "invalid",
+  }
+}
+```
+
+**5. Agent 循环：Effect 流式管道 + 末日循环检测**
+
+- 流式处理 LLM 事件（`tool-input-start` → `tool-input-delta` → `tool-call` → `tool-result`）
+- **末日循环检测**（Doom Loop Detection）：如果同一工具用相同参数连续调用 3 次，触发用户确认
+- 上下文溢出时自动压缩（context compaction）
+- 支持权限审批，危险操作需用户确认
+
+**6. 错误处理与重试**
+
+- **指数退避重试**：基础延迟 2000ms × 2^(attempt-1)，25% 随机抖动
+- 尊重 `Retry-After` 响应头
+- 最多重试 5 次，最大延迟 30 秒
+- 可重试条件：HTTP 429/500/502/503/504、速率限制、网络错误、超时
+
+### 三者对比总结
+
+| 维度 | 当前示例代码 | DeepSeek-harness | opencode |
+|------|------------|-----------------|----------|
+| **工具定义** | Prompt 自然语言 | JSON Schema | Effect Schema + JSON Schema |
+| **调用解析** | 正则表达式 | 原生 Function Calling | Vercel AI SDK 原生处理 |
+| **Agent 循环** | for 循环 + 字符串拼接 | 完整会话管理 + 子 Agent | Effect 流式管道 |
+| **错误处理** | 返回错误字符串 | 结构化错误 + 重试 | 指数退避 + 调用修复 + InvalidTool |
+| **安全控制** | 无 | 沙箱权限 + 审批 | 权限规则集 + 用户确认 |
+| **工具生态** | 硬编码 2 个 | 内置 + MCP + Skill | 内置 + 自定义 + 插件 + MCP |
+| **上下文管理** | 字符串拼接 | 对话历史 + 压缩 | 流式事件 + 自动压缩 |
+| **循环检测** | 无 | 无 | 末日循环检测（3次阈值） |
+| **实现语言** | Python | TypeScript | TypeScript (Effect) |
+
+### 演进路线
 
 ```
-                    演进路线
-                    
-  当前示例代码          DeepSeek-harness / opencode
-  ──────────          ──────────────────────────
-  
-  Prompt 文本注入  ──►  原生 Function Calling API
-  正则解析输出    ──►  结构化 JSON Schema 响应
-  硬编码工具字典  ──►  动态工具注册 / MCP 协议
-  字符串拼接历史  ──►  完整 Agent 循环框架
-  无安全控制     ──►  权限审批 + 沙箱隔离
-  无错误恢复     ──►  重试 + 超时 + 降级策略
+当前示例代码              DeepSeek-harness              opencode
+──────────              ──────────────────              ────────
+
+Prompt 文本注入    ──►   原生 Function Calling    ──►   AI SDK 统一抽象层
+正则解析输出       ──►   结构化 JSON Schema 响应  ──►   Schema 编译解码器
+硬编码工具字典     ──►   内置 + MCP 动态注册      ──►   分层服务 + 插件系统
+字符串拼接历史     ──►   完整 Agent 循环框架      ──►   Effect 流式管道
+无安全控制        ──►   沙箱权限 + 审批机制      ──►   规则集 + 用户确认
+无错误恢复        ──►   结构化错误处理           ──►   指数退避 + 调用修复
 ```
 
-**核心启示**：当前示例代码展示了一个最小可行的 Agent 实现，其价值在于让我们理解工具调用的本质——**让 LLM 的推理能力与外部世界的实时数据相连接**。而现代开源项目的改进方向，本质上是在**可靠性、安全性、可扩展性**三个维度上对这一基本模式的工程化升级。
+### 核心启示
+
+当前示例代码展示了一个**最小可行的 Agent 实现**，其价值在于让我们理解工具调用的本质——**让 LLM 的推理能力与外部世界的实时数据相连接**。
+
+而 DeepSeek-harness 和 opencode 的改进方向，本质上是在三个维度上的工程化升级：
+
+1. **可靠性**：从脆弱的正则解析 → 原生 Function Calling → 调用修复 + 末日循环检测
+2. **安全性**：从无控制 → 沙箱隔离 → 细粒度权限规则集
+3. **可扩展性**：从硬编码 → MCP 动态注册 → 分层服务 + 插件生态
