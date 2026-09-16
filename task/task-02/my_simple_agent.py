@@ -22,7 +22,7 @@ class MySimpleAgent(SimpleAgent):
         self.tool_registry = tool_registry
         self.enable_tool_calling = enable_tool_calling and tool_registry is not None
         print(f"✅ {name} 初始化完成，工具调用: {'启用' if self.enable_tool_calling else '禁用'}")
-    
+
     def run(self, input_text: str, max_tool_iterations: int = 3, **kwargs) -> str:
         """
         重写的运行方法 - 实现简单对话逻辑，支持可选工具调用
@@ -46,7 +46,7 @@ class MySimpleAgent(SimpleAgent):
         # 如果没有启用工具调用，使用简单对话逻辑
         if not self.enable_tool_calling:
             llm_response = self.llm.invoke(messages, **kwargs)
-            response = llm_response.content
+            response = llm_response
             self.add_message(Message(input_text, "user"))
             self.add_message(Message(response, "assistant"))
             print(f"✅ {self.name} 响应完成")
@@ -78,7 +78,7 @@ class MySimpleAgent(SimpleAgent):
         tools_section += "工具调用结果会自动插入到对话中，然后你可以基于结果继续回答。\n"
 
         return base_prompt + tools_section
-    
+
     def _run_with_tools(self, messages: list, input_text: str, max_tool_iterations: int, **kwargs) -> str:
         """支持工具调用的运行逻辑"""
         current_iteration = 0
@@ -87,7 +87,7 @@ class MySimpleAgent(SimpleAgent):
         while current_iteration < max_tool_iterations:
             # 调用LLM
             llm_response = self.llm.invoke(messages, **kwargs)
-            response = llm_response.content
+            response = llm_response  # invoke() 直接返回字符串
 
             # 检查是否有工具调用
             tool_calls = self._parse_tool_calls(response)
@@ -121,7 +121,7 @@ class MySimpleAgent(SimpleAgent):
         # 如果超过最大迭代次数，获取最后一次回答
         if current_iteration >= max_tool_iterations and not final_response:
             llm_response = self.llm.invoke(messages, **kwargs)
-            final_response = llm_response.content
+            final_response = llm_response  # invoke() 直接返回字符串
 
         # 保存到历史记录
         self.add_message(Message(input_text, "user"))
@@ -195,7 +195,7 @@ class MySimpleAgent(SimpleAgent):
                 param_dict = {'input': parameters}
 
         return param_dict
-    
+
     def stream_run(self, input_text: str, **kwargs) -> Iterator[str]:
         """
         自定义的流式运行方法
@@ -240,14 +240,14 @@ class MySimpleAgent(SimpleAgent):
     def has_tools(self) -> bool:
         """检查是否有可用工具"""
         return self.enable_tool_calling and self.tool_registry is not None
-    
+
     def remove_tool(self, tool_name: str) -> bool:
         """移除工具（便利方法）"""
         if self.tool_registry:
             self.tool_registry.unregister(tool_name)
             return True
         return False
-    
+
     def list_tools(self) -> list:
         """列出所有可用工具"""
         if self.tool_registry:

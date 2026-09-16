@@ -75,7 +75,7 @@ class MyReActAgent(ReActAgent):
             # 2. 调用LLM
             messages = [{"role": "user", "content": prompt}]
             llm_response = self.llm.invoke(messages, **kwargs)
-            response_text = llm_response.content
+            response_text = llm_response  # invoke() 直接返回字符串
 
             # 3. 解析输出
             thought, action = self._parse_output(response_text)
