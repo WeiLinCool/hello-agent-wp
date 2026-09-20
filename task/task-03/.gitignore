@@ -1,0 +1,8 @@
+.venv/
+.cache/
+.qdrant_storage/
+.neo4j_data/
+__pycache__/
+*.pyc
+memory_data/
+.env
