@@ -1,0 +1,4 @@
+hello-agents[all]==1.0.0
+# MCP 官方 Python SDK：2.x 使用 MCPServer（1.x 是 FastMCP），代码对两者做了兼容导入。
+# 本目录实际验证版本：mcp 2.2.0 / Python 3.14.5
+mcp>=2.0,<3
