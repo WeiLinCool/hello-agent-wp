@@ -1,0 +1,88 @@
+{
+  "notes": [
+    {
+      "id": "note_20260927_215108_0",
+      "title": "任务 1: 原生架构演进",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_1"
+      ],
+      "created_at": "2026-09-27T21:51:08.590798"
+    },
+    {
+      "id": "note_20260927_215108_1",
+      "title": "任务 2: 实时交互与具身",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_2"
+      ],
+      "created_at": "2026-09-27T21:51:08.592652"
+    },
+    {
+      "id": "note_20260927_215108_2",
+      "title": "任务 3: 垂直领域落地",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_3"
+      ],
+      "created_at": "2026-09-27T21:51:08.593670"
+    },
+    {
+      "id": "note_20260927_215108_3",
+      "title": "任务 4: 安全对齐与治理",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_4"
+      ],
+      "created_at": "2026-09-27T21:51:08.594096"
+    },
+    {
+      "id": "note_20260927_222323_4",
+      "title": "任务 1: 核心业务与产品矩阵",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_1"
+      ],
+      "created_at": "2026-09-27T22:23:23.833003"
+    },
+    {
+      "id": "note_20260927_222323_5",
+      "title": "任务 2: 目标客群与生态定位",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_2"
+      ],
+      "created_at": "2026-09-27T22:23:23.834783"
+    },
+    {
+      "id": "note_20260927_222323_6",
+      "title": "任务 3: 盈利模式与商业化",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_3"
+      ],
+      "created_at": "2026-09-27T22:23:23.835724"
+    },
+    {
+      "id": "note_20260927_222323_7",
+      "title": "任务4: 竞争优势评估",
+      "type": "task_state",
+      "tags": [
+        "deep_research",
+        "task_4"
+      ],
+      "created_at": "2026-09-27T22:23:23.836733"
+    }
+  ],
+  "metadata": {
+    "created_at": "2026-09-27T20:56:24.790798",
+    "total_notes": 8
+  }
+}
